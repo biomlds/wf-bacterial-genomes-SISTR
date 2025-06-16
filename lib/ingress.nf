@@ -212,13 +212,12 @@ def fastq_ingress(Map arguments)
     // If filtlong is enabled, run it after fastcat and use its output for downstream
     def ch_final
     if (params.use_filtlong) {
-        ch_final = ch_spread_result
+        def ch_filtlong_input = ch_spread_result
             .map { meta, files, stats ->
                 // Only use the first file for filtlong (single file expected after fastcat)
                 [meta, files[0]]
             }
-            .set { ch_filtlong_input }
-        ch_filtlong = filtlong_subsample(ch_filtlong_input)
+        def ch_filtlong = filtlong_subsample(ch_filtlong_input)
         ch_final = ch_filtlong
             .map { meta, filtlong_fastq -> [meta, filtlong_fastq, null] }
     } else {
