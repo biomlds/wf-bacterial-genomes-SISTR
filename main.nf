@@ -25,6 +25,22 @@ include {
     reportingCheckpoint;
 } from './modules/local/checkpoints'
 
+process filtlong {
+    container = "quay.io/biocontainers/filtlong:0.2.1--hdcf5f25_4"
+    label 'wf_common'
+    input:
+        tuple val(meta), path(reads)
+        val params.filtlong_target_coverage
+        val params.filtlong_genome_size
+        val params.filtlong_opts
+    output:
+        tuple val(meta), path("${meta.alias}.subsampled.fastq.gz")
+    shell = '''
+        filtlong --target_bases $(echo "${params.filtlong_genome_size}*${params.filtlong_target_coverage}" | bc) ${params.filtlong_opts} \\
+            ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
+    '''
+}
+
 OPTIONAL_FILE = file("$projectDir/data/OPTIONAL_FILE")
 FLYE_MIN_COVERAGE_THRESHOLD = 5
 
