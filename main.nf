@@ -26,7 +26,7 @@ include {
 } from './modules/local/checkpoints'
 
 process filtlong {
-    label 'wf_common'
+    label 'filtlong'
     input:
         tuple val(meta), path(reads), val(target_coverage), val(genome_size), val(filtlong_opts)
     output:
