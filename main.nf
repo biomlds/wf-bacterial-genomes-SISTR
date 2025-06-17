@@ -30,9 +30,6 @@ process filtlong {
     label 'wf_common'
     input:
         tuple val(meta), path(reads)
-        val params.filtlong_target_coverage
-        val params.filtlong_genome_size
-        val params.filtlong_opts
     output:
         tuple val(meta), path("${meta.alias}.subsampled.fastq.gz")
     script:
