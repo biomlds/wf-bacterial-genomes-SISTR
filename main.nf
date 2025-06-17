@@ -480,7 +480,7 @@ workflow calling_pipeline {
         )
 
         // Conditionally run filtlong
-        Channel ch_reads_for_downstream
+        def ch_reads_for_downstream
         if (params.filtlong_target_coverage > 0 && params.filtlong_genome_size) {
             log.info("Running Filtlong for read subsampling.")
             filtlong(
