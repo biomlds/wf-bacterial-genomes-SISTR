@@ -218,12 +218,14 @@
                 },
                 "filtlong_target_coverage": {
                     "type": "integer",
+                    "default": 50,
                     "title": "Filtlong Target Coverage",
                     "description": "Target coverage for read subsampling with Filtlong. Combined with genome size to calculate target bases.",
                     "help_text": "The desired sequencing depth to aim for after subsampling with Filtlong. For example, a value of 50 would aim for 50x coverage."
                 },
                 "filtlong_genome_size": {
                     "type": "string",
+                    "default": 5000000,
                     "title": "Filtlong Genome Size",
                     "description": "Estimated genome size for Filtlong subsampling (e.g., 5m, 2.5g). Combined with target coverage to calculate target bases.",
                     "help_text": "The estimated size of the genome. Accepts suffixes like 'k', 'm', 'g'. For example, '4.6m' for a 4.6 Megabase genome. This is used by Filtlong to calculate the total number of bases to target."

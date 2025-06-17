@@ -26,16 +26,14 @@ include {
 } from './modules/local/checkpoints'
 
 process filtlong {
-    container = "quay.io/biocontainers/filtlong:0.2.1--hdcf5f25_4"
     label 'wf_common'
     input:
-        tuple val(meta), path(reads)
+        tuple val(meta), path(reads), val(target_coverage), val(genome_size), val(filtlong_opts)
     output:
         tuple val(meta), path("${meta.alias}.subsampled.fastq.gz")
     script:
-    def filtlong_opts_local = params.filtlong_opts ?: ""
     """
-    filtlong --target_bases \$(echo "${params.filtlong_genome_size}*${params.filtlong_target_coverage}" | bc) ${filtlong_opts_local} ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
+    filtlong --target_bases $((genome_size * target_coverage)) ${filtlong_opts} ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
     """
 }
 
@@ -481,10 +479,14 @@ workflow calling_pipeline {
         )
 
         // Conditionally run filtlong
-        def ch_reads_for_downstream
+        Channel ch_reads_for_downstream
         if (params.filtlong_target_coverage > 0 && params.filtlong_genome_size) {
             log.info("Running Filtlong for read subsampling.")
-            filtlong(input_reads.valid_reads)
+            filtlong(
+                input_reads.valid_reads.map { meta, reads ->
+                    tuple(meta, reads, params.filtlong_target_coverage as Integer, params.filtlong_genome_size as Integer, params.filtlong_opts)
+                }
+            )
             ch_reads_for_downstream = filtlong.out
         } else {
             log.info("Skipping Filtlong: filtlong_target_coverage not > 0 or filtlong_genome_size not set.")
