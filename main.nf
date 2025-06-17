@@ -450,28 +450,39 @@ process collectFastqIngressResultsInDir {
 // modular workflow
 workflow calling_pipeline {
     take:
-        reads
+        reads // This is the 'samples' channel from fastq_ingress/xam_ingress
         reference
     main:
-        reads.branch { meta, reads, stats -> 
-            reads : meta.n_seqs > 0
-                return [ meta, reads ]
-            no_reads : meta.n_seqs == null || meta.n_seqs == 0
+        // Branch input reads based on validity (e.g., non-empty)
+        reads.branch { meta, current_reads, stats -> // Renamed 'reads' to 'current_reads' to avoid conflict
+            valid_reads : meta.n_seqs > 0 && current_reads.size() > 0
+                return [ meta, current_reads ]
+            no_reads : meta.n_seqs == null || meta.n_seqs == 0 || current_reads.size() == 0
                 return [ meta, OPTIONAL_FILE ]
         }.set{input_reads}
         
         ingress_checkpoint = ingressCheckpoint(
-            input_reads.reads | map { meta, reads -> [ meta, "complete" ] }
-            | mix (input_reads.no_reads | map { meta, reads -> [ meta, "not-met" ] } )
+            input_reads.valid_reads | map { meta, r -> [ meta, "complete" ] } // Use valid_reads branch
+            | mix (input_reads.no_reads | map { meta, r -> [ meta, "not-met" ] } )
         )
 
+        // Conditionally run filtlong
+        Channel ch_reads_for_downstream
+        if (params.filtlong_target_coverage > 0 && params.filtlong_genome_size) {
+            log.info("Running Filtlong for read subsampling.")
+            filtlong(input_reads.valid_reads)
+            ch_reads_for_downstream = filtlong.out
+        } else {
+            log.info("Skipping Filtlong: filtlong_target_coverage not > 0 or filtlong_genome_size not set.")
+            ch_reads_for_downstream = input_reads.valid_reads
+        }
 
         // get basecall models: we use `params.override_basecaller_cfg` if present;
         // otherwise use `meta.basecall_models[0]` (there should only be one value in
         // the list because we're running ingress with `allow_multiple_basecall_models:
         // false`; note that `[0]` on an empty list returns `null`)
 
-        basecall_models_initial = input_reads.reads.map { meta, reads ->
+        basecall_models_initial = ch_reads_for_downstream.map { meta, read_file ->
             String basecall_model = \
                 params.override_basecaller_cfg ?: meta.basecall_models[0]
             if (!basecall_model) {
@@ -490,39 +501,50 @@ workflow calling_pipeline {
         if (params.reference_based_assembly && !params.reference){
             throw new Exception("Reference based assembly selected, a reference sequence must be provided through the --reference parameter.")
         }
+
+        // Initialize failed_samples with reads that were initially empty or had no sequences
+        failed_samples_initial = input_reads.no_reads | map { meta, r -> [ meta, "not-met" ] }
+
         if (!params.reference_based_assembly){
             log.info("Running Denovo assembly.")
-            deNovo(input_reads.reads)
-            // some samples might have failed flye due to low coverage
-            deNovo.out.failed.map { meta, failed ->
-                if (failed == "1") {
-                    log.warn "Flye failed for sample '$meta.alias' due to low coverage."
-                } else if (failed == "2"){
-                    log.warn "Flye failed for sample '$meta.alias' as no disjointigs were assembled."
+            deNovo(ch_reads_for_downstream) // USE THE OUTPUT OF FILTLONG (or original if skipped)
+
+            deNovo.out.failed.map { meta, failed_reason ->
+                if (failed_reason == "1") {
+                    log.warn "Flye failed for sample '$meta.alias' due to low coverage (after potential filtlong)."
+                } else if (failed_reason == "2"){
+                    log.warn "Flye failed for sample '$meta.alias' as no disjointigs were assembled (after potential filtlong)."
                 }
             }
 
-            // Creat channel of failed samples for checkpoints "not-met"
-            failed_samples = input_reads.no_reads.mix(
-                deNovo.out.failed | filter { meta, failed -> failed != "0"}
-            ) | map { meta, field -> [ meta, "not-met" ] }
+            failed_samples_denovo = deNovo.out.failed | filter { meta, failed_reason -> failed_reason != "0"} | map { meta, fr -> [meta, "not-met"] }
+            failed_samples = failed_samples_initial.mix(failed_samples_denovo)
 
             named_refs = deNovo.out.asm.map { meta, asm, stats -> [meta, asm] }
+
             // Nextflow might be run in strict mode (e.g. in CI) which prevents `join`
             // from dropping non-matching entries. We have to use `remainder: true` and
             // filter afterwards instead.
-            read_ref_groups = input_reads.reads.join(named_refs, remainder: true).filter {
-                meta, reads, asm -> asm
-            }
+            // Ensure this join uses ch_reads_for_downstream and named_refs (which is derived from deNovo.out.asm)
+            // The meta from ch_reads_for_downstream should be [meta_map]
+            // The meta from named_refs is [meta_map, path_to_asm]
+            // So join by the first element (meta_map)
+             read_ref_groups = ch_reads_for_downstream.join(named_refs, by: [0], remainder: true).filter {
+                meta, reads_file, asm_file_maybe -> asm_file_maybe // ensure assembly (second element from named_refs) exists
+            }.map{ meta, reads_file, asm_file -> [meta, reads_file, asm_file] } // Reshape for alignReads: tuple val(meta), path(reads), path(ref)
+
             flye_info = deNovo.out.asm.map { meta, asm, stats -> [meta, stats] }
         } else {
             log.info("Reference based assembly selected.")
             references = Channel.fromPath(params.reference)
-            read_ref_groups = input_reads.reads.combine(references)
-            named_refs = read_ref_groups.map { it -> [it[0], it[2]] }
+            // read_ref_groups should combine ch_reads_for_downstream with the reference
+            read_ref_groups = ch_reads_for_downstream.combine(references)
+            // named_refs in reference mode is just the reference itself, associated with meta
+            named_refs = read_ref_groups.map { meta, reads_file, ref_file -> [meta, ref_file] }
             flye_info = Channel.empty()
-            failed_samples = input_reads.no_reads 
-                | map { meta, reads -> [ meta, "not-met" ] }
+            // In reference mode, only initial failures (no_reads) contribute to failed_samples before alignment.
+            // Alignment failures could be added later if needed.
+            failed_samples = failed_samples_initial
         }
 
         alignments = alignReads(read_ref_groups)
