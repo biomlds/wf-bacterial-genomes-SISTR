@@ -32,8 +32,9 @@ process filtlong {
     output:
         tuple val(meta), path("${meta.alias}.subsampled.fastq.gz")
     script:
+    def target_bases = genome_size * target_coverage
     """
-    filtlong --target_bases $((genome_size * target_coverage)) ${filtlong_opts} ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
+    filtlong --target_bases ${target_bases} ${filtlong_opts} ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
     """
 }
 
