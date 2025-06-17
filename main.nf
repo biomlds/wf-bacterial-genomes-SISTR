@@ -35,10 +35,11 @@ process filtlong {
         val params.filtlong_opts
     output:
         tuple val(meta), path("${meta.alias}.subsampled.fastq.gz")
-    shell = '''
-        filtlong --target_bases $(echo "${params.filtlong_genome_size}*${params.filtlong_target_coverage}" | bc) ${params.filtlong_opts} \\
-            ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
-    '''
+    script:
+    def filtlong_opts_local = params.filtlong_opts ?: ""
+    """
+    filtlong --target_bases \$(echo "${params.filtlong_genome_size}*${params.filtlong_target_coverage}" | bc) ${filtlong_opts_local} ${reads} | gzip > ${meta.alias}.subsampled.fastq.gz
+    """
 }
 
 OPTIONAL_FILE = file("$projectDir/data/OPTIONAL_FILE")
