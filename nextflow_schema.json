@@ -224,7 +224,7 @@
                     "help_text": "The desired sequencing depth to aim for after subsampling with Filtlong. For example, a value of 50 would aim for 50x coverage."
                 },
                 "filtlong_genome_size": {
-                    "type": "string",
+                    "type": "integer",
                     "default": 5000000,
                     "title": "Filtlong Genome Size",
                     "description": "Estimated genome size for Filtlong subsampling (e.g., 5m, 2.5g). Combined with target coverage to calculate target bases.",
